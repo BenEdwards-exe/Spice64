@@ -1,0 +1,282 @@
+* NGSPICE test bench for Electronics 315 Prac 3 audio amplifier
+*--------------------------------------------------------------
+* Author:   Coenrad Fourie
+* Last mod: 10 May 2020
+*--------------------------------------------------------------
+* Info: Prac 3 amplifier circuit will plug into this testbench
+*       for analysis. IT MUST PASS ALL CHECKS for full marks.
+*       Explanations provided in the deck below.
+*
+* Test sequence:
+*       1. Amplifier tested with Xpsu = psudc, vipeak = 1, Temp = 35
+*          MUST PASS all minimum signal power and efficiency thresholds and stay in Safe Operating Area
+*       2. Transistor power analysed near peak power (2VCC/pi),
+*          MUST have Temp_Qn, Temp_Qp < 150 C.
+*       3. Amplifier retested with Temp = max(Temp_Qn, Temp_Qp). This step is recursive, and
+*          is repeated until max(Temp_Qn, Temp_Qp) stabilizes or exceeds T_j_max = 150 C.
+*          MUST PASS all minimum signal power and efficiency thresholds and Temp_Qn, Temp_Qp < 150 C.
+*       4. THD at 1kHz evaluated when input signal = 1 V peak.
+*          MUST be below 4 %
+*       5. THD at 1kHz evaluated when input signal = 1 mV peak (to test cross-over distortion).
+*          THD MUST be below 0.2 %, with load power at 1 kHz > 10 uW
+*
+* Marks:
+*       Total marks = 10 (this test bench awards a maximimum of 8.
+*         Efficiency OK = 1; Power 40 Hz OK = 2; Power 1 kHz OK = 2; Power 20 kHz OK = 1; Input signal current OK = 1; Power at 1 mV input OK = 1
+*       Evaluation from batch run text file output adds final 2.
+*         THD at 1 kHz with 1 V input signal < 4 % = 1; THD at 1 kHz with 1 mV input signal < 0.2 % = 1;
+*       If transistors break: mark = 0. 
+*==============================================================
+
+* Student amplifier is subckt "audioamp" in file "yourstudentnumber.cir" - Use your student number for automated testing and mark population
+.include 21726167.cir
+
+* Lecturers define the power supplies
+.include psu_dc.cir
+
+* Speaker is a 6 Ohm resistive load (ideal, no inductance)
+
+
+* ============= POWER SUPPLY ================
+* 'psudc' is a dual bench-top dc supply with current limiters (3 A)
+
+Xpsu  vcc vee 0    psudc 
+
+* ============= SIGNAL INPUT ================
+* Input has zero output resistance; max 1 Vpeak. Amplifier must amplify this - source peak is a hard limit.
+
+.param vipeak = 1
+
+*vi   in  0  sin 0  vipeak  1k
+* Composite source to test 40 Hz, 20 kHz and 1 kHz in one run
+
+Bi    in  0  v= v(t1)*v(g1)+v(t2)*v(g2)+v(t3)*v(g3)
+
+vsin1 t1  0  0  sin 0  vipeak  40
+rsin1 t1  0  10k
+vgate1 g1 0  0  pwl 0  1  100m 1 100.01m 0
+rgate1 g1 0  10k
+
+vsin2 t2  0  0  sin 0  vipeak  1k  101m
+rsin2 t2  0  10k
+vgate2 g2 0  0  pwl 0 0 100m 0 100.01m 0.64 105m 0.64 105.01m 1
+rgate2 g2 0  10k
+
+vsin3 t3  0  0  sin 0  vipeak  20k  100m
+rsin3 t3  0  10k
+vgate3 g3 0  0  pwl 0 0 100m 0 100.01m 1 101m 1 101.01m 0
+rgate3 g3 0  10k
+
+
+* =========== LOAD (6 Ohm SPEAKER) ===========
+* The load is a 6 Ohm hi-fi speaker (ideal, no inductance, flat frequency response)
+
+VLmeas out       spkplus   DC        0
+RL     spkplus   outn      6
+
+* =============== AMPLIFIER =================
+* Amplifier pins: Sig+  Out+    Out-    Supply+ Supply-  [subckt name]
+
+Xamp              in    out     outn    vcc     vee       audioamp 
+
+* ============= ANALYSIS CONTROL =============
+* Temperature in degrees celsius (all components at this T). We test at 35C and the maximum T_j
+
+.temp 35
+
+* Now, gate the results into pass/fail (spec/nospec)
+.control
+  tran 1u 150m 75m 1u
+
+
+
+* Define thermal resistances and ambient temperature
+  let Tambient = 35
+  let theta_sa = 2.7
+  let theta_cs = 1
+  let theta_jc = 1.92
+
+* Define safe operating area
+  let Ic_max = 10
+  let Vce_max = 100
+  let SB_offset = 3.5
+  let SB_product = 4650
+  let SOA_counter = 0
+  
+* Define pass criteria
+  let Output_Signal_Pwr_min = 12
+  let Input_Signal_I_max    = 1.5m 
+  let PracSuccess = 0
+
+* Create power vectors - these include signal and dc power (large capacitor charge-up cause dc offset in short simulations)
+  let QnVce        = (v(vcc)-v(xamp.qne)) 
+  let QpVec        = (v(xamp.qpe)-v(vee))   
+  let powerQn      = QnVce*i(v.xamp.vicn)
+  let powerQp      = QpVec*i(v.xamp.vicp)
+  let powerVCC     =  v(vcc)*i(v.xpsu.vcurrentvcc)
+  let powerVEE     =  v(vee)*i(v.xpsu.vcurrentvee)
+  let vSpeaker     =  v(out)-v(outn)
+  let powerSpeaker = (v(out)-v(outn))*i(vlmeas)
+  let SBinstantaneousQn = (QnVce-SB_offset)*((QnVce-SB_offset))*i(v.xamp.vicn)
+  let SBinstantaneousQp = (QpVec-SB_offset)*((QpVec-SB_offset))*i(v.xamp.vicp)
+  
+* Measure the average voltage in the load for different frequency signals  
+  meas tran aveV40  avg v(out)    FROM=75m   TO=100m
+  meas tran aveI40  avg i(vlmeas) FROM=75m   TO=100m
+  meas tran aveV1k  avg v(out)    FROM=147m   TO=150m
+  meas tran aveI1k  avg i(vlmeas) FROM=147m   TO=150m
+  meas tran aveV20k avg v(out)    FROM=100.1m TO=101m
+  meas tran aveI20k avg i(vlmeas) FROM=100.1m TO=101m
+  
+  meas tran trigval max v(in)     FROM=147m   TO=150m
+  
+* Now measure the average of the power vectors  
+  meas tran pwrQn        avg powerQn      FROM=104m TO=105m
+  meas tran pwrQp        avg powerQp      FROM=104m TO=105m
+  meas tran pwrVCC       avg powerVCC     FROM=147m TO=150m
+  meas tran pwrVEE       avg powerVEE     FROM=147m TO=150m
+  meas tran pwrload40hz  avg powerSpeaker FROM=75m TO=100m
+  meas tran pwrload1khz  avg powerSpeaker FROM=147m TO=150m
+  meas tran pwrload20khz avg powerSpeaker FROM=100.1m TO=101m
+
+* Measure transistors for safe operationg area violation
+  meas tran QnImax   max i(v.xamp.vicn)    FROM=75m TO=150m
+  meas tran QpImax   max i(v.xamp.vicp)    FROM=75m TO=150m
+  meas tran QnVCEmax max QnVce             FROM=75m TO=150m
+  meas tran QpVECmax max QpVec             FROM=75m TO=150m
+  meas tran SBQn     max SBinstantaneousQn FROM=75m TO=150m
+  meas tran SBQp     max SBinstantaneousQp FROM=75m TO=150m
+  
+* Measure input source maximum current (so as not to destroy signal source)
+  meas tran ViMaxI max i(bi) FROM=75m TO=150m
+
+* Calculate the actual signal power in the load (average/RMS power minus dc power)
+  let Psig40Hz  = $&pwrload40Hz  - $&aveV40*$&aveI40
+  let Psig1kHz  = $&pwrload1kHz  - $&aveV1k*$&aveI1k
+  let Psig20kHz = $&pwrload20kHz - $&aveV20k*$&aveI20k
+  
+* Calculate efficiency at 1 kHz (average signal power in load / total source power to amplifier (all stages included))  
+  let eff = ($&Psig1kHz)/($&pwrVCC+$&pwrVEE)
+
+* Calculate steady-state temperature of output transistors for applied input singal amplitude
+  let t_j_qn = $&tambient+($&theta_cs+$&theta_jc+$&theta_sa)*$&pwrQn
+  let t_j_qp = $&tambient+($&theta_cs+$&theta_jc+$&theta_sa)*$&pwrQp
+
+*  Total Harmonic Distortion at 1 kHz (only evaluated over last period)
+*  Can be evaluated in batch mode with:
+*  > ngspice -b -o simout.txt testbench_p3.cir
+
+  fourier 1k vSpeaker
+
+* Count marks
+  let mark = 8
+
+* Display results
+  echo
+  if trigval > 2e-3  
+    echo Amplifier test results at full output power   
+	if QnImax > Ic_max
+	  echo Max pulsed collector current exceeded (IC_Qn = "$&QnImax" A). Output npn BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if QpImax > Ic_max
+	  echo Max pulsed collector current exceeded (IC_Qp = "$&QpImax" A). Output pnp BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if QnVCEmax > Vce_max
+	  echo Max collector-emittor voltage exceeded (VCE_Qn = "$&QnVCEmax" V). Output npn BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if QpVECmax > Vce_max
+	  echo Max emittor-collector voltage exceeded (VEC_Qp = "$&QpVECmax" V). Output pnp BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if SBQn > SB_product
+	  echo Second breakdown. Output npn BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if SBQp > SB_product
+	  echo Second breakdown. Output pnp BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+    if SOA_counter < 0.5
+	  echo All output BJT transistors within safe operating area - PASS
+	else
+	  let PracSuccess = 1
+	  let mark = 0
+    end
+	if viMaxI > Input_Signal_I_max
+	  echo Input signal maximum current ($&viMaxI A) exceeds limit of "$&Input_Signal_I_max" A - FAIL
+	  let PracSuccess = 1
+	  let mark = mark - 1
+    end
+
+    if Psig40Hz > Output_Signal_Pwr_min 
+      echo Average signal power in speaker @ 40Hz: "$&Psig40Hz" W. Larger than "$&Output_Signal_Pwr_min" W - PASS
+    else
+      echo Average signal power in speaker @ 40Hz: "$&Psig40Hz" W. Smaller than "$&Output_Signal_Pwr_min" W - FAIL
+	  let PracSuccess = 1
+	  let mark = mark - 2  
+    end	
+    if Psig1kHz > Output_Signal_Pwr_min 
+      echo Average signal power in speaker @ 1kHz: "$&Psig1kHz" W. Larger than "$&Output_Signal_Pwr_min" W - PASS
+    else
+      echo Average signal power in speaker @ 1kHz: "$&Psig1kHz" W. Smaller than "$&Output_Signal_Pwr_min" W - FAIL
+	  let PracSuccess = 1
+	  let mark = mark - 2
+    end	
+    if Psig20kHz > Output_Signal_Pwr_min 
+      echo Average signal power in speaker @ 20kHz: "$&Psig20kHz" W. Larger than "$&Output_Signal_Pwr_min" W - PASS
+    else
+      echo Average signal power in speaker @ 20kHz: "$&Psig20kHz" W. Smaller than "$&Output_Signal_Pwr_min" W - FAIL
+	  let PracSuccess = 1
+	  let mark = mark - 1
+  
+    end	
+    if eff > 0.45
+      echo Efficiency at 1 kHz of "$&eff" larger than 0.45 - PASS
+    else 
+      echo Efficiency at 1 kHz of "$&eff" smaller than 0.45 - FAIL
+	  let PracSuccess = 1
+	  let mark = mark - 1  
+    end
+    if t_j_qn > 150
+      echo Temperature of output npn BJT at "$&t_j_qn" C. It burns out - FAIL
+	  let PracSuccess = 1
+	  let mark = 0
+    else 
+      echo Temperature of output npn BJT at "$&t_j_qn" C. Below 150 C - PASS
+    end
+    if t_j_qp > 150
+      echo Temperature of output pnp BJT at "$&t_j_qp" C. It burns out - FAIL
+	  let PracSuccess = 1
+	  let mark = 0
+    else 
+      echo Temperature of output pnp BJT at "$&t_j_qp" C. Below 150 C - PASS
+    end
+  else
+    echo Amplifier test results at small input signal (cross-over distortion test)
+    if Psig1kHz > 10e-6
+      echo Average signal power in speaker @ 1kHz: "$&Psig1kHz" W. Larger than 10 uW - PASS
+    else
+      echo Average signal power in speaker @ 1kHz: "$&Psig1kHz" W. Smaller than 10 uW - FAIL
+	  let PracSuccess = 1
+	  let mark = mark - 1	  
+    end	
+  end
+  if mark < 0
+    let mark = 0
+  end
+  echo
+  if PracSuccess < 0.5
+    echo Final practical demonstration result - SUCCESS.  Mark = $&mark
+    say done
+  else
+    echo Final practical demonstration result - UNSUCCESSFUL.  Mark = $&mark
+    say done
+  end  
+  
+
+
+
+.endc 

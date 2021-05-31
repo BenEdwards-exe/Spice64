@@ -1,0 +1,22 @@
+* SPICE model for power amplifier
+*---------------------------------------
+* Author: Coenrad Fourie
+* Last mod: 23 April 2020
+*=======================================
+
+.subckt psuideal dcplus dcminus psugnd
+
+
+* ---- CURRENT-LIMITED BENCH PSU -------
+* Positive output  20 V at node (5)1000
+* Negative output -20 V at node (5)2000
+
+VsourceVCC  1002   psugnd   20
+VsourceVEE  2002   psugnd  -20
+
+* Measure
+VcurrentVCC 1002   dcplus  DC   0
+VcurrentVEE 2002   dcminus DC   0
+
+.ends
+

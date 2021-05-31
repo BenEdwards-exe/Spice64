@@ -1,0 +1,537 @@
+* NGSPICE test bench for Electronics 315 Prac 3 audio amplifier
+*--------------------------------------------------------------
+* Author:   Coenrad Fourie
+* Last mod: 13 May 2021
+* Info: Fixed max mark issue
+*--------------------------------------------------------------
+* Info: Prac 3 amplifier circuit will plug into this testbench
+*       for analysis. IT MUST PASS ALL CHECKS for full marks.
+*       Explanations provided in the deck below.
+*
+* Test sequence:
+*       1. Amplifier tested with Xpsu = psudc, vipeak = 0.5 V, Temp = 30 C
+*          MUST stay in Safe Operating Area.
+*       2. Transistor power analysed near peak power (~ 2VCC/pi, but it is found through swept analysis).
+*       3. Amplifier retested with Temp = max(Temp_Qn, Temp_Qp). This step is repeated 6 times to
+*          allow max(Temp_Qn, Temp_Qp) to stabilize and to test for thermal runaway.
+*          MUST have Temp_Qn and Temp_Qp remain below 150 C.
+*       4. Marks for exceeding required minimum output power to load (8 Wrms) at 40 Hz, 1 kHz and 20 kHz.
+*       5. THD at 40 Hz, 1 kHz and 20 kHz evaluated when input signal = 1 V peak.
+*          Marks awarded when THD is below 4 %, but only if load power is above 10 W threshold.
+*       6. THD at 1kHz evaluated when input signal = 1 mV peak (to test cross-over distortion).
+*          THD MUST be below 0.2 %, with load power at 1 kHz > 5 uW
+*       7. Power efficiency at full power, with 1 kHz input signal, must exceed 45 %.
+*
+* Marks:
+*       Total marks = 10.
+*       If smoke test fails (transistors break): mark = 0, and the practical is failed
+*       If mark < 5, the practical is failed. 
+*
+* Achievement score:
+*       Achievement score is printed purely for bragging rights (with no relation to your prac mark).
+*       Higher score means a better design (100% and above is possible).
+*
+* Fixes:
+*       Update to marks definition to avoid marking unknown vectors
+*==============================================================
+
+* Student amplifier is subckt "audioamp" in file "yourstudentnumber.cir" - Use your student number for automated testing and mark population
+.include 22738002_std.cir              
+
+.include psu_dc.cir                  $ Lecturer defines the current-limited power supplies
+
+*.param rspeaker = 8                  $ Speaker is a 8 Ohm resistive load (ideal, no inductance)
+
+* ============= POWER SUPPLY ================
+
+Xpsu  vcc vee 0    psudc             $ 'psudc' is a dual bench-top dc supply with current limiters (3 A)
+
+* ============= SIGNAL INPUT ================
+
+vi   in  0  sin 0  0.5  1k           $ Define input signal source - sinusoidal 1 V peak, at 1 kHz
+
+* =========== LOAD (8 Ohm SPEAKER) ===========
+* The load is a 8 Ohm hi-fi speaker (ideal, no inductance, flat frequency response)
+
+VLmeas out       spkplus   DC        0
+RL     spkplus   outn      8
+
+* =============== AMPLIFIER =================
+* Amplifier pins: Sig+  Out+    Out-    Supply+ Supply-  [subckt name]
+
+Xamp              in    out     outn    vcc     vee       audioamp 
+
+* ============= ANALYSIS CONTROL =============
+* Temperature in degrees celsius (all components at this T). We start test at 35C and 
+* iterate to find the maximum T_j as transistor parameters change due to heating.
+
+.temp 30
+
+.control
+* Vectors (NB: vectors not defined BEFORE first simulation are destroyed after subsequent simulations.)
+* Define thermal resistances and ambient temperature
+  let Tambient = 30
+  let theta_sa = 10      $ Aluminium plate, 80x50x2 mm, vertically mounted, single TO-220 package mounted with heat sink paste
+  let theta_cs = 1
+  let theta_jc = 1.92
+  
+* Define safe operating area of TIP41C/TIP42C
+  let Ic_max      = 10
+  let Vce_max     = 100
+  let SB_offset   = 3.5
+  let SB_product  = 4650
+  let SOA_counter = 0
+  
+* Define pass criteria
+  let Output_Signal_Pwr_min = 8     $ in units of watt
+  let Input_Signal_I_max    = 1     $ in units of mA 
+  let PracSuccess = 0
+
+* Define simulation control vectors BEFORE first simulation 
+  let StepsPerPeriod = 1000         $ Higher value gives better THD measurement
+  let SimPeriods     = 10            $ Allow a few periods for capacitors to charge
+  let tstep          = 0
+  let tstop1k        = 0
+  let tlastper1k     = 0
+  let tstop40        = 0  
+  let tlastper40     = 0
+  let tstop20k       = 0
+  let tlastper20k    = 0
+  let tstoppwr       = 0 
+  let tlastperpwr    = 0  
+  
+*  ----------------------------------
+
+  let SourceAmplitude          = 0.5
+  let SourceAmplitudePeakPower = SourceAmplitude*0.64    $ (2/pi)*Vpeak_out
+  let SourceAmplitudeSweep     = 0
+  let SAFrac                   = 0
+  let peakTpwr                 = 0
+  let SimFreq                  = 20k                     $ Start with 20 kHz simulation
+  
+  alter @vi[sin]  = [ 0 $&SourceAmplitude $&SimFreq ]    $ NB: spaces required "[_" and "_]"
+  let tstep       = 1/(SimFreq*StepsPerPeriod)
+  let tstop20k    = SimPeriods/SimFreq  
+  let tlastper20k = tstop20k-1/SimFreq
+  tran $&tstep $&tstop20k 0 $&tstep                      $ 20 kHz run (tran1)
+    plot v(vcc),v(vee),v(in), v(out)
+	plot v(xamp.em)
+  
+  let SimFreq     = 1k                                   $ Then simulate a 1 kHz input signal
+  alter @vi[sin]  = [ 0 $&SourceAmplitude $&SimFreq ]        
+  let tstep       = 1/(SimFreq*StepsPerPeriod)
+  let tstop1k     = SimPeriods/SimFreq
+  let tlastper1k  = tstop1k-1/SimFreq  
+  tran $&tstep $&tstop1k 0 $&tstep                       $ 1 kHz run (tran2)
+    plot v(vcc),v(vee),v(in), v(out)
+	plot v(xamp.em)
+	
+  
+  let SimFreq     = 40
+  alter @vi[sin]  = [ 0 $&SourceAmplitude $&SimFreq ]    $ Finally test with 40 Hz bass signal
+  let tstep       = 1/(SimFreq*StepsPerPeriod) 
+  let tstop40     = SimPeriods/SimFreq
+  let tlastper40  = tstop40-1/SimFreq  
+  tran $&tstep $&tstop40 0 $&tstep                       $ 40 Hz run (tran3)
+  
+  let SimFreq     = 1k
+  alter @vi[sin]  = [ 0 1m $&SimFreq ]                   $ 1 kHz again, but now with 1 mV input signal (test cross-over distortion)
+  let tstep       = 1/(SimFreq*StepsPerPeriod)
+  tran $&tstep $&tstop1k 0 $&tstep                       $ 1 kHz run  with 1 mV input (tran4)
+
+  let SimFreq     = 1k                                  
+  alter @vi[sin]  = [ 0 $&SourceAmplitude $&SimFreq ]      
+  alter @v.xpsu.vsourcevcc[dc] =  4.2
+  alter @v.xpsu.vsourcevee[dc] = -4.2
+  let tstep=1/(SimFreq*StepsPerPeriod)
+  tran $&tstep $&tstop1k 0 $&tstep                       $ 1 kHz run with reduced voltage sources (tran5)
+
+  let SimFreq     = 1k
+  let SAFrac      = 0.25
+  alter @v.xpsu.vsourcevcc[dc] =  19.2
+  alter @v.xpsu.vsourcevee[dc] = -19.2
+  let SourceAmplitudePeakPower =  0
+  let StepsPerPeriod           =  100                    $ No need for high fidelity for average power test
+  let tstep       = 1/(SimFreq*StepsPerPeriod)
+  let tstoppwr    = SimPeriods/SimFreq
+  let tlastperpwr = tstoppwr-1/SimFreq    
+  tran $&tstep $&tstoppwr 0 $&tstep     
+  repeat 30
+* Calculate input voltage ampligude for peak transistor power
+    let SAFrac               = SAFrac + 0.025
+	let SourceAmplitudeSweep = SourceAmplitude*SAFrac 
+    alter @vi[sin] = [ 0 $&SourceAmplitudeSweep $&SimFreq ]   
+    tran $&tstep $&tstoppwr 0 $&tstep     
+
+    let QnVceT        = (v(vcc)-v(xamp.qne)) 
+    let QpVecT        = (v(xamp.qpe)-v(vee))   
+    let powerQnT      = QnVceT*i(v.xamp.vicn)  
+    let powerQpT      = QpVecT*i(v.xamp.vicp)
+    meas tran pwrQnT  avg powerQnT      FROM=$&tlastperpwr   TO=$&tstoppwr
+    meas tran pwrQpT  avg powerQpT      FROM=$&tlastperpwr   TO=$&tstoppwr	
+    if pwrQnT > peakTpwr
+      let peakTpwr = pwrQnT
+      let SourceAmplitudePeakPower = SourceAmplitudeSweep
+    end
+    if pwrQpT > peakTpwr
+      let peakTpwr = pwrQpT
+      let SourceAmplitudePeakPower = SourceAmplitudeSweep
+    end
+	let SAFrac = SAFrac+0.
+  end 
+
+  alter @vi[sin] = [ 0 $&SourceAmplitudePeakPower $&SimFreq ]   
+  let StepsPerPeriod = 100                   $ No need for high fidelity for average power test
+  let tstep          = 1/(SimFreq*StepsPerPeriod)
+  let tstoppwr       = SimPeriods/SimFreq
+  let tlastperpwr    = tstoppwr-1/SimFreq    
+  tran $&tstep $&tstoppwr 0 $&tstep          $ 1 kHz run at peak transistor power
+  repeat 5
+* Calculate steady-state temperature of output transistors for applied input signal amplitude (repeat to catch thermal runaway)
+    let QnVceT        = (v(vcc)-v(xamp.qne)) 
+    let QpVecT        = (v(xamp.qpe)-v(vee))   
+    let powerQnT      = QnVceT*i(v.xamp.vicn)  
+    let powerQpT      = QpVecT*i(v.xamp.vicp)
+    meas tran pwrQnT  avg powerQnT      FROM=$&tlastperpwr   TO=$&tstoppwr
+    meas tran pwrQpT  avg powerQpT      FROM=$&tlastperpwr   TO=$&tstoppwr	
+    let tjqn          = $&tambient+($&theta_cs+$&theta_jc+$&theta_sa)*$&pwrQnT
+    let tjqp          = $&tambient+($&theta_cs+$&theta_jc+$&theta_sa)*$&pwrQpT
+	echo tjqn = $&tjqn and tjqp = $&tjqp
+    if tjqn > tjqp
+      set temp = $&tjqn
+    else
+      set temp = $&tjqp
+    end
+    tran $&tstep $&tstoppwr 0 $&tstep        $ 1 kHz run for peak power measurement
+  end 
+  let timepwr=time
+  
+* Create power vectors - these include signal and dc power (large capacitor charge-up cause dc offset in short simulations)
+  let QnVce             = (v(vcc)-v(xamp.qne)) 
+  let QpVec             = (v(xamp.qpe)-v(vee))   
+  let powerQn           = QnVce*i(v.xamp.vicn)
+  let powerQp           = QpVec*i(v.xamp.vicp)
+* Now measure the average of the power vectors  
+  meas tran pwrQn        avg powerQn      FROM=$&tlastperpwr   TO=$&tstoppwr
+  meas tran pwrQp        avg powerQp      FROM=$&tlastperpwr   TO=$&tstoppwr
+  
+  let powerVCC          =  tran2.v(vcc)*tran2.i(v.xpsu.vcurrentvcc)
+  let powerVEE          =  tran2.v(vee)*tran2.i(v.xpsu.vcurrentvee)
+  let vSpeaker1k        =  tran2.v(out)-tran2.v(outn)
+  let vSpeaker1k1m      =  tran4.v(out)-tran4.v(outn)
+  let vSpeaker40        =  tran3.v(out)-tran3.v(outn)
+  let vSpeaker20k       =  tran1.v(out)-tran1.v(outn)
+  let vSpeakerRedBias   =  tran5.v(out)-tran5.v(outn)
+  let powerSpeaker40    = (tran3.v(out)-tran3.v(outn))*tran3.i(vlmeas)
+  let powerSpeaker1k    = (tran2.v(out)-tran2.v(outn))*tran2.i(vlmeas)
+  let powerSpeaker20k   = (tran1.v(out)-tran1.v(outn))*tran1.i(vlmeas)
+  let powerSpeaker1k1mV = (tran4.v(out)-tran4.v(outn))*tran4.i(vlmeas)
+  let powerSpeakerRedBias = (tran5.v(out)-tran5.v(outn))*tran5.i(vlmeas)
+  let SBinstantaneousQn = (QnVce-SB_offset)*((QnVce-SB_offset))*tran5.i(v.xamp.vicn)
+  let SBinstantaneousQp = (QpVec-SB_offset)*((QpVec-SB_offset))*tran5.i(v.xamp.vicp)
+
+* Measure the average voltage in the load for different frequency signals   
+  let time=tran3.time     $ for 40 Hz sim
+  meas tran aveV40  avg tran3.v(out)    FROM=$&tlastper40   TO=$&tstop40
+  meas tran aveI40  avg tran3.i(vlmeas) FROM=$&tlastper40   TO=$&tstop40
+  let time=tran2.time     $ for 1 kHz sim
+  meas tran aveV1k  avg tran2.v(out)    FROM=$&tlastper1k   TO=$&tstop1k
+  meas tran aveI1k  avg tran2.i(vlmeas) FROM=$&tlastper1k   TO=$&tstop1k
+  let time=tran1.time     $ for 20 kHz sim
+  meas tran aveV20k avg tran1.v(out)    FROM=$&tlastper20k  TO=$&tstop20k
+  meas tran aveI20k avg tran1.i(vlmeas) FROM=$&tlastper20k  TO=$&tstop20k
+  let time=tran4.time     $ for 1 kHz sim at 1mV input
+  meas tran aveV1k1mV  avg tran4.v(out)    FROM=$&tlastper1k   TO=$&tstop1k
+  meas tran aveI1k1mV  avg tran4.i(vlmeas) FROM=$&tlastper1k   TO=$&tstop1k
+ 
+  let time=tran2.time
+  meas tran pwrVCC       avg powerVCC     FROM=$&tlastper1k   TO=$&tstop1k
+  meas tran pwrVEE       avg powerVEE     FROM=$&tlastper1k   TO=$&tstop1k
+  let time=tran3.time
+  meas tran pwrload40hz  avg powerSpeaker40 FROM=$&tlastper40   TO=$&tstop40
+  let time=tran2.time
+  meas tran pwrload1khz  avg powerSpeaker1k FROM=$&tlastper1k   TO=$&tstop1k
+  let time=tran1.time
+  meas tran pwrload20khz avg powerSpeaker20k FROM=$&tlastper20k  TO=$&tstop20k
+  let time=tran4.time
+  meas tran pwrload1khz1mV avg powerSpeaker1k1mV FROM=$&tlastper1k   TO=$&tstop1k
+  let time=tran5.time
+  meas tran pwrloadRedBias avg powerSpeakerRedBias FROM=$&tlastper1k  TO=$&tstop1k
+
+* Measure transistors for safe operating area violation @ 1 kHz
+  let time=tran2.time
+  meas tran QnImax   max tran5.i(v.xamp.vicn)    FROM=$&tlastper1k   TO=$&tstop1k
+  meas tran QpImax   max tran5.i(v.xamp.vicp)    FROM=$&tlastper1k   TO=$&tstop1k
+  let time=timepwr
+  meas tran QnVCEmax max QnVce                   FROM=$&tlastperpwr   TO=$&tstoppwr
+  meas tran QpVECmax max QpVec                   FROM=$&tlastperpwr   TO=$&tstoppwr
+  let time=tran2.time
+  meas tran SBQn     max SBinstantaneousQn       FROM=$&tlastper1k   TO=$&tstop1k
+  meas tran SBQp     max SBinstantaneousQp       FROM=$&tlastper1k   TO=$&tstop1k
+  
+* Measure input source maximum current (so as not to destroy signal source)
+  meas tran ViMaxI max tran1.i(vi) FROM=$&tlastper1k   TO=$&tstop1k
+  let ViMaxImA = viMaxI*1000
+
+* Calculate the actual signal power in the load (average/RMS power minus dc power)
+  let Psig40Hz    = $&pwrload40Hz     - $&aveV40*$&aveI40
+  let Psig1kHz    = $&pwrload1kHz     - $&aveV1k*$&aveI1k
+  let Psig20kHz   = $&pwrload20kHz    - $&aveV20k*$&aveI20k
+  let Psig1kHz1mV = $&pwrload1kHz1mV  - $&aveV1k1mV*$&aveI1k1mV
+  
+* Calculate efficiency at 1 kHz (average signal power in load / total source power to amplifier (all stages included))  
+  let eff = ($&Psig1kHz)/($&pwrVCC+$&pwrVEE)*100
+
+* Calculate steady-state temperature of output transistors for applied input signal amplitude
+  let t_j_qn = $&tambient+($&theta_cs+$&theta_jc+$&theta_sa)*$&pwrQn
+  let t_j_qp = $&tambient+($&theta_cs+$&theta_jc+$&theta_sa)*$&pwrQp
+
+  fourier 1k vSpeaker1k vSpeaker1k1m
+  let time=tran3.time
+  fourier 40 vSpeaker40
+  let time=tran1.time
+  fourier 20k vSpeaker20k 
+
+*  Total Harmonic Distortion at 1 kHz FULL POWER (only evaluated over last period) 
+  let f0=fourier11[1][0]   $ Fourier run 1, for vector 1 (vSpeaker1k). matrix mxn; m0=freq, m1=magn; m2=phase
+  let f1=fourier11[1][1]
+  let f2=fourier11[1][2]
+  let f3=fourier11[1][3]
+  let f4=fourier11[1][4]
+  let f5=fourier11[1][5]
+  let f6=fourier11[1][6]
+  let f7=fourier11[1][7]
+  let f8=fourier11[1][8]
+  let f9=fourier11[1][9]
+  let fthd1k=sqrt($&f2^2+$&f3^2+$&f4^2+$&f5^2+$&f6^2+$&f7^2+$&f8^2+$&f9^2)/$&f1*100
+
+*  Total Harmonic Distortion at 1 kHz with 1 mV input signal (only evaluated over last period)
+  let f1k1m1=fourier12[1][1]  $ Fourier run 1, for vector 2 (vSpeaker1k1m). matrix mxn; m0=freq, m1=magn; m2=phase
+  let f1k1m2=fourier12[1][2]
+  let f1k1m3=fourier12[1][3]
+  let f1k1m4=fourier12[1][4]
+  let f1k1m5=fourier12[1][5]
+  let f1k1m6=fourier12[1][6]
+  let f1k1m7=fourier12[1][7]
+  let f1k1m8=fourier12[1][8]
+  let f1k1m9=fourier12[1][9]
+  let fthd1k1m=sqrt($&f1k1m2^2+$&f1k1m3^2+$&f1k1m4^2+$&f1k1m5^2+$&f1k1m6^2+$&f1k1m7^2+$&f1k1m8^2+$&f1k1m9^2)/$&f1k1m1*100
+  
+  let f400=fourier21[1][0]   $ Fourier run 2, for vector 1 (vSpeaker40).
+  let f401=fourier21[1][1]
+  let f402=fourier21[1][2]
+  let f403=fourier21[1][3]
+  let f404=fourier21[1][4]
+  let f405=fourier21[1][5]
+  let f406=fourier21[1][6]
+  let f407=fourier21[1][7]
+  let f408=fourier21[1][8]
+  let f409=fourier21[1][9]
+  let fthd40=sqrt($&f402^2+$&f403^2+$&f404^2+$&f405^2+$&f406^2+$&f407^2+$&f408^2+$&f409^2)/$&f401*100
+
+  let f20k1=fourier31[1][1]  $ Fourier run 3, for vector 1 (vSpeaker20k).
+  let f20k2=fourier31[1][2]
+  let f20k3=fourier31[1][3]
+  let f20k4=fourier31[1][4]
+  let f20k5=fourier31[1][5]
+  let f20k6=fourier31[1][6]
+  let f20k7=fourier31[1][7]
+  let f20k8=fourier31[1][8]
+  let f20k9=fourier31[1][9]
+  let fthd20k=sqrt($&f20k2^2+$&f20k3^2+$&f20k4^2+$&f20k5^2+$&f20k6^2+$&f20k7^2+$&f20k8^2+$&f20k9^2)/$&f20k1*100
+  
+* Count marks
+* Test if vectors exist
+  let mark = 0
+  if QnImax > 1e-10
+    let mark = mark + 1
+  end	
+  if QpVECmax > 1e-10
+    let mark = mark + 1
+  end	  
+  if SBQn > 1e-10
+    let mark = mark + 1
+  end	
+  if ViMaxI > 1e-10
+    let mark = mark + 1
+  end  
+  if pwrQn > 1e-10
+    let mark = mark + 1
+  end  
+  if pwrQp > 1e-10
+    let mark = mark + 1
+  end  
+  if pwrVCC > 0.1
+    let mark = mark + 2
+  end  
+  if pwrVEE > 0.1
+    let mark = mark + 1
+  end  
+  if pwrload1khz > 1e-10
+    let mark = mark + 1
+  end  
+  let AchievementScore = 5*100/(t_j_qn) + 5*100/(t_j_qp) + 2.5*(0.001-ViMaxI)/0.001 + 5*Psig40Hz/8 + 5*Psig1kHz/8 + 5*Psig20kHz/8 + 5*Psig1kHz1mv/(0.5e-5) + 15*eff/45 + 10*(4-fthd1k)/4 + 10*(4-fthd40)/4 + 10*(4-fthd20k)/4 + 5*(0.2-fthd1k1m)/0.2
+  let mark=10
+
+* Display results
+  echo
+    echo Power amplifier test results
+	if QnImax > Ic_max
+	  echo Max pulsed collector current exceeded (IC_Qn = "$&QnImax" A). Output npn BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if QpImax > Ic_max
+	  echo Max pulsed collector current exceeded (IC_Qp = "$&QpImax" A). Output pnp BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if QnVCEmax > Vce_max
+	  echo Max collector-emittor voltage exceeded (VCE_Qn = "$&QnVCEmax" V). Output npn BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if QpVECmax > Vce_max
+	  echo Max emittor-collector voltage exceeded (VEC_Qp = "$&QpVECmax" V). Output pnp BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if SBQn > SB_product
+	  echo Second breakdown. Output npn BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	if SBQp > SB_product
+	  echo Second breakdown. Output pnp BJT destroyed - FAIL
+	  let SOA_counter = 1
+    end
+	echo
+	echo   +----------------------------+------+-----------------+-----------------------------+
+	echo   |Smoke test (Hard P/F): P/F. | .... | ..Hard limit... | .......Test result......... |
+	echo   +----------------------------+------+-----------------+-----------------------------+
+    if SOA_counter < 0.5
+	  echo |Safe Op. Area (@1kHz): PASS | NULL | BJTs within SOA | BJTs inside SOA
+	else
+	  let PracSuccess = 1
+	  let mark = 0
+	  echo |Safe Op. Area (@1kHz): FAIL | NULL | BJTs within SOA | SOA exceeded (Catastrophic failure)
+    end
+    if t_j_qn > 150
+      echo |T(power npn).........: FAIL | NULL | Below 150 C.... | "$&t_j_qn" C (burns out)
+	  let PracSuccess = 1
+	  let mark = 0
+    else 
+      echo |T(power npn).........: PASS | NULL | Below 150 C.... | "$&t_j_qn" C
+    end
+    if t_j_qp > 150
+      echo |T(power pnp).........: FAIL | NULL | Below 150 C.... | "$&t_j_qp" C (burns out)
+	  let PracSuccess = 1
+	  let mark = 0
+    else 
+      echo |T(power pnp).........: PASS | NULL | Below 150 C.... | "$&t_j_qp" C
+    end
+    if PwrLoadRedBias > 1
+	  echo |Amp generates power..: FAIL | NULL | Project specs.. | Violation (fatal)
+	  let PracSuccess = 1
+	  let mark = 0
+    end	
+	echo   +----------------------------+------+-----------------+-----------------------------+
+	echo   |Test param. (scoring): P/F. | Mark | ...Benchmark... | .......Test result......... |
+	echo   +----------------------------+------+-----------------+-----------------------------+
+	if viMaxImA > Input_Signal_I_max
+	  echo |ii(max)..............: FAIL | ..0. | Below 1 mA..... | "$&ViMaxImA" mA
+	  let mark = mark - 1
+	else
+      echo |ii(max)..............: PASS | ..1. | Below 1 mA..... | "$&ViMaxImA" mA
+    end
+
+    if Psig40Hz > Output_Signal_Pwr_min 
+      echo |Psig(speaker) @ 40Hz : PASS | ..1. | Above 8 W...... | "$&Psig40Hz" W
+    else
+      echo |Psig(speaker) @ 40Hz : FAIL | ..0. | Above 8 W...... | "$&Psig40Hz" W
+	  let mark = mark - 1  
+    end	
+    if Psig1kHz > Output_Signal_Pwr_min 
+      echo |Psig(speaker) @ 1kHz : PASS | ..1. | Above 8 W...... | "$&Psig1kHz" W	
+    else
+      echo |Psig(speaker) @ 1kHz : FAIL | ..0. | Above 8 W...... | "$&Psig1kHz" W	
+	  let mark = mark - 1
+    end	
+    if Psig20kHz > Output_Signal_Pwr_min 
+	  echo |Psig(speaker) @ 20kHz: PASS | ..1. | Above 8 W...... | "$&Psig20kHz" W	
+    else
+      echo |Psig(speaker) @ 20kHz: FAIL | ..0. | Above 8 W...... | "$&Psig20kHz" W	
+	  let mark = mark - 1
+    end	
+    if Psig1kHz1mV > 5u 
+      echo |Psig(spk) (vi=1mV)...: PASS | ..1. | Above 0.5E-5 W. | "$&Psig1kHz1mV" W	
+    else
+      echo |Psig(spk) (vi=1mV)...: FAIL | ..0. | Above 0.5E-5 W. | "$&Psig1kHz1mV" W	
+	  let mark = mark - 1
+    end		
+    if eff > 45
+	  echo |Pwr efficiency @ 1kHz: PASS | ..1. | Above 45 %..... | "$&eff" %
+    else 
+      echo |Pwr efficiency @ 1kHz: FAIL | ..0. | Above 45 %..... | "$&eff" %	
+	  let mark = mark - 1  
+    end
+
+    if fthd1k < 4
+	  if Psig1kHz > Output_Signal_Pwr_min
+	    echo |THD @ 1kHz (full pwr): PASS | ..1. | Below 4 %...... | "$&fthd1k" %	
+	  else
+	    echo |THD @ 1kHz (full pwr): N/A. | ..0. | Below 4 %...... | Load power below spec	
+		let mark = mark - 1
+	  end
+    else
+      echo |THD @ 1kHz (full pwr): FAIL | ..0. | Below 4 %...... | "$&fthd1k" %
+	  let mark = mark - 1
+    end
+    if fthd40 < 4
+	  if Psig40Hz > Output_Signal_Pwr_min
+	    echo |THD @ 40Hz (full pwr): PASS | ..1. | Below 4 %...... | "$&fthd40" %	
+	  else
+	    echo |THD @ 40Hz (full pwr): N/A. | ..0. | Below 4 %...... | Load power below spec	
+		let mark = mark - 1
+  	  end
+    else
+      echo |THD @ 40Hz (full pwr): FAIL | ..0. | Below 4 %...... | "$&fthd40" %
+	  let mark = mark - 1
+    end
+    if fthd20k < 4
+      if Psig20kHz > Output_Signal_Pwr_min 
+	    echo |THD @ 20kHz (fll pwr): PASS | ..1. | Below 4 %...... | "$&fthd20k" %	
+	  else
+	    echo |THD @ 20kHz (fll pwr): N/A. | ..0. | Below 4 %...... | Load power below spec	
+		let mark = mark - 1
+  	  end
+    else
+      echo |THD @ 20kHz (fll pwr): FAIL | ..0. | Below 4 %...... | "$&fthd20k" %
+	  let mark = mark - 1
+    end
+    if fthd1k1m < 0.2
+	  echo |THD @ 1kHz (vi=1mV)..: PASS | ..1. | Below 0.2 %.... | "$&fthd1k1m" %	
+    else
+      echo |THD @ 1kHz (vi=1mV)..: FAIL | ..0. | Below 0.2 %.... | "$&fthd1k1m" %
+	  let mark = mark - 1
+    end
+
+  if mark < 0
+    let mark = 0
+  end
+  if mark < 5
+    let PracSuccess = 1
+  end
+  echo   +============================+======+=================+=============================+
+  if PracSuccess < 0.5
+    if mark = 10
+      echo |FINAL RESULT.........: PASS | .$&mark .| ... Achievement score: $&AchievementScore
+	else
+	  echo |FINAL RESULT.........: PASS | ..$&mark .| ... Achievement score: $&AchievementScore
+	end
+    echo   +============================+======+
+  else
+    if mark = 10  
+      echo |FINAL RESULT.........: FAIL | .$&mark .|
+	else
+	  echo |FINAL RESULT.........: FAIL | ..$&mark .|
+	end
+	echo   +============================+======+
+  end  
+  echo
+.endc 

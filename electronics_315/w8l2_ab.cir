@@ -1,0 +1,121 @@
+* SPICE example for Week 8 Lecture 2
+*---------------------------------------
+* Author: Coenrad Fourie
+* Last mod: 13 February 2021
+*
+* Design of Class-AB amplifier
+* with VBE-multiplier
+*=======================================
+
+.include models.cir
+
+vi      in    0    sin  0   9   1k  20m
+
+Cin     in    q2b  100u
+
+VCC     vcc   0    12
+VEE     vee   0   -12
+
+* Power stage
+Q1      q1c  q1b  em    TIP41C
+Q2      q2c  q2b  em    TIP42C
+
+* Current source
+Q3      q1b  q3b   q3e   t2N2905A
+RE      4    q3e   22
+R3      vcc  3    258.5
+R4      q3b  0    1476
+
+
+* VBE-multiplier
+Q4      q4c  q4b   q2b     t2N2219A
+R1      2    q4b    50
+R2      q4b  q2b    70
+
+RBIAS   q2b   1   251
+  
+* Load
+Cout    em   out  1000u
+RL      out  0    8
+
+* Current measurement
+VIR3    3    q3b    DC    0
+VIRE    vcc  4    DC    0
+VIR1    q1b  2    DC    0
+VIC4    q1b  q4c    DC    0
+VIRBIAS 1    vee  DC    0
+VIC1    vcc  q1c   DC    0
+VIC2    q2c  vee  DC    0
+
+.control
+  temp = 27
+  tran 1u 50m 0 1u
+  let powerQ1 = (v(vcc)-v(em))*i(vic1)
+  let powerQ2 = (v(em)-v(vee))*i(vic2)
+  let powerQ3 = (v(q3e)-v(q1b))*i(vire)
+  let powerQ4 = (v(q1b)-v(q2b))*i(vic4)
+  let powerRE = (v(vcc)-v(q3e))*i(vire)
+  let powerR4 = (v(q3b)*v(3b))/1476
+  let powerR2 = (v(q4b)-v(q2b))*(v(q4b)-v(q2b))/70
+  let powerRBIAS = (v(q2b)-v(1))*i(virbias)
+  let powerRL = v(out)*v(out)/8
+  let powerVCC = -v(vcc)*i(vcc)
+  let powerVEE = -v(vee)*i(vee)
+  meas tran PQ1Q    avg  powerQ1   FROM=10m TO=20m
+  meas tran PQ1sig  avg  powerQ1   FROM=40m TO=50m
+  meas tran PQ2Q    avg  powerQ2   FROM=10m TO=20m
+  meas tran PQ2sig  avg  powerQ2   FROM=40m TO=50m
+  meas tran PQ3Q    avg  powerQ3   FROM=10m TO=20m
+  meas tran PQ3sig  avg  powerQ3   FROM=40m TO=50m
+  meas tran PQ4Q    avg  powerQ4   FROM=10m TO=20m
+  meas tran PQ4sig  avg  powerQ4   FROM=40m TO=50m
+  meas tran PREQ    avg  powerRE   FROM=10m TO=20m
+  meas tran PREsig  avg  powerRE   FROM=40m TO=50m
+  meas tran PR4Q    avg  powerR4   FROM=10m TO=20m
+  meas tran PR4sig  avg  powerR4   FROM=40m TO=50m
+  meas tran PR2Q    avg  powerR2   FROM=10m TO=20m
+  meas tran PR2sig  avg  powerR2   FROM=40m TO=50m
+  meas tran PRBIASQ    avg  powerRBIAS   FROM=10m TO=20m
+  meas tran PRBIASsig  avg  powerRBIAS   FROM=40m TO=50m
+  meas tran PRLQ    avg  powerRL   FROM=10m TO=20m
+  meas tran PRLsig  avg  powerRL   FROM=40m TO=50m
+  meas tran PVCCQ    avg  powerVCC   FROM=10m TO=20m
+  meas tran PVCCsig  avg  powerVCC   FROM=40m TO=50m
+  meas tran PVEEQ    avg  powerVEE   FROM=10m TO=20m
+  meas tran PVEEsig  avg  powerVEE   FROM=40m TO=50m
+
+  fourier 1k v(out)
+  
+  let f0=fourier11[1][0]   $ Fourier run 1, for vector 1 (v(out)). matrix mxn; m0=freq, m1=magn; m2=phase
+  let f1=fourier11[1][1]
+  let f2=fourier11[1][2]
+  let f3=fourier11[1][3]
+  let f4=fourier11[1][4]
+  let f5=fourier11[1][5]
+  let f6=fourier11[1][6]
+  let f7=fourier11[1][7]
+  let f8=fourier11[1][8]
+  let f9=fourier11[1][9]
+  
+  let fthd=sqrt($&f2^2+$&f3^2+$&f4^2+$&f5^2+$&f6^2+$&f7^2+$&f8^2+$&f9^2)/$&f1*100
+  
+  let efficiency=$&PRLsig/($&PVCCsig+$&PVEEsig)*100
+  
+  echo thd = "$&fthd" %
+  echo Power Q-pt | Max load power
+  echo Q1: $&PQ1Q W | $&PQ1sig W  
+  echo Q2: $&PQ2Q W | $&PQ2sig W  
+  echo Q3: $&PQ3Q W | $&PQ3sig W  
+  echo Q4: $&PQ4Q W | $&PQ4sig W  
+  echo RE: $&PREQ W | $&PREsig W  
+  echo R4: $&PR4Q W | $&PR4sig W  
+  echo R2: $&PR2Q W | $&PR2sig W  
+  echo RBIAS: $&PRBIASQ W | $&PRBIASsig W  
+  echo RL: $&PRLQ W | $&PRLsig W  
+  echo VCC: $&PVCCQ W | $&PVCCsig W  
+  echo VEE: $&PVEEQ W | $&PVEEsig W  
+  echo effciency = $&efficiency %
+  echo
+.endc
+
+.end

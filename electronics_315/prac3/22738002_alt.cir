@@ -1,0 +1,113 @@
+* SPICE model for power amplifier
+*-------------------------------------------------------------
+* Author: Barend Jacobus Edwards
+* SU student number : 22738002
+* Last mod: 29 May 2021
+*=============================================================
+* Description: This Class-A is used to show (non-)compliance
+* specifications and tests for Electronics 315 practical 3
+*=============================================================
+
+* YOUR CIRCUIT MUST INCLUDE:
+* 1. A voltage source (DC 0) in series with the emitter of Qn, named Vicn, to measure I_{CQn}.
+*    Its POSITIVE node must be connected to the emitter of Qn, and named "qne"
+*      Example:  Vicn qne nodewhatever  DC  0
+* 2. A voltage source (DC 0) in series with the emitter of Qp, named Vicp, to measure I_{CQp}.
+*    Its NEGATIVE node must be connected to the emitter of Qp, and named "qpe"
+*      Example:  Vicp nodewhateverelse  qpe  DC  0
+
+* Include the transistor models as an external file ("models.cir"); these are standard for the module
+.include models.cir
+
+* Define amplifier as a subcircuit to avoid node name clashes in test bench
+* subckt name must be "audioamp"
+* ---------------------------------------------------------------------------------------------
+* Pin sequence must be:  SignalInput+, SpeakerOut+, SpeakerOut-, SupplyVoltage+, SupplyVoltage-
+* ---------------------------------------------------------------------------------------------
+
+.subckt  audioamp  in  out  outn  vcc  vee 
+
+* Finally, your circuit is defined below:
+
+* ============== CUT OUT BELOW AND BUILD YOUR CIRCUIT ====================
+
+
+** Pre-Amplifier **
+Q8		q8c		q8b		q8e		t2N2219A
+
+R18		R18-1	q8b		27000
+R28		q8b		vee 	1000
+RC8		RC8-1	q8c		2700
+RE8		q8e		vee		82
+
+Cin		in 		q8b		10u
+CC1 	q8c 	cc1-1 	10u
+
+** VBE-Multiplier **
+Q6		q6c		q6b		q3b		t2N2219A
+Q7		vee  	q7b 	q7e		t2N2905A
+
+R1 		R1-1	q6b		1270
+R2 		q6b		q3b 	450
+R5		R5-1 	q7b		65000
+R6		q7b		vee 	50000
+
+
+
+** Current Source **
+Q5 	 	q1b 	q5b 	q5e 	t2N2905A
+
+RE 		RE-1 	q5e 	270 
+R3 		R3-1 	q5b 	140
+R4 		q5b 	0 		1650
+
+** Power Stage ** 
+Q1 		q1c 	q1b 	q2b 	t2N2219A
+Q2 		q2c 	q2b  	qne 	TIP41C
+Q3 	 	q3c 	q3b  	q4b 	t2N2905A
+Q4 	 	q4c 	q4b 	qpe 	TIP42C
+
+REn 	noden	em 		1m
+REp 	em 		nodep  	1m
+
+CG1 	vcc 	0 		100u
+CG2 	vee 	0 		100u
+
+** Load **
+COUT 	em 		out 	4700u
+
+
+** Current Measurement **
+Vicp 	nodep 	qpe 	DC 		0	
+Vicn 	qne 	noden 	DC 		0
+VIQ1 	vcc 	q1c 	DC 		0
+VIQ2  	vcc 	q2c 	DC 		0
+VIQ3 	q3c 	vee 	DC 		0
+VIQ4 	q4c 	vee 	DC  	0
+VIRE 	vcc 	RE-1 	DC  	0
+VIQ6 	q1b 	q6c 	DC 		0
+VIQ7 	q3b 	q7e 	DC 		0
+VIR18 	vcc 	R18-1 	DC 		0
+VIRC8 	vcc 	RC8-1 	DC 		0
+VIR5 	vcc 	R5-1 	DC 		0
+VIR3	vcc 	R3-1 	DC 		0
+VIR1 	q1b 	R1-1 	DC 		0
+VIPO 	cc1-1 	q7b 	DC 		0
+
+
+
+********* Q  collector base emitter model
+
+
+
+
+* ============== CUT OUT ABOVE AND BUILD YOUR CIRCUIT ====================
+
+* low resistance speaker connection to ground (to avoid putting "0" in the .subckt line
+
+Rcable outn 0  1m
+
+.ends
+* ============================================
+
+
