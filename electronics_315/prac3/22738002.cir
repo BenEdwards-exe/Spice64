@@ -2,7 +2,7 @@
 *-------------------------------------------------------------
 * Author: Barend Jacobus Edwards
 * SU student number : 22738002
-* Last mod: 29 May 2021
+* Last mod: 01 June 2021
 *=============================================================
 * Description: This Class-A is used to show (non-)compliance
 * specifications and tests for Electronics 315 practical 3
@@ -38,7 +38,7 @@ Q8		q8c		q8b		q8e		t2N2219A
 R18		R18-1	q8b		24040
 R28		q8b		vee 	848
 RC8		RC8-1	q8c		2700
-RE8		q8e		vee		82
+RE8		q8e		vee		70
 
 
 Cin		in 		q8b		10u
@@ -48,7 +48,7 @@ Q6		q6c		q6b		q3b		t2N2219A
 Q7		vee  	q7b 	q7e		t2N2905A
 
 R1 		R1-1	q6b		1900
-R2 		q6b		q3b 	700
+R2 		q6b		q3b 	650
 R5		R5-1 	q7b		59459
 R6		q7b		vee 	48648
 
@@ -58,8 +58,8 @@ CC1 	q8c 	cc1-1 	10u
 Q5 	 	q1b 	q5b 	q5e 	t2N2905A
 
 RE 		RE-1 	q5e 	270 
-R3 		R3-1 	q5b 	346
-R4 		q5b 	0 		3077
+R3 		R3-1 	q5b 	2967
+R4 		q5b 	0 		30001
 
 ** Power Stage ** 
 Q1 		q1c 	q1b 	q2b 	t2N2219A

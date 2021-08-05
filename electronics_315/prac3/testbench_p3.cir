@@ -36,7 +36,7 @@
 *==============================================================
 
 * Student amplifier is subckt "audioamp" in file "yourstudentnumber.cir" - Use your student number for automated testing and mark population
-.include 22738002_std.cir              
+.include 22738002.cir              
 
 .include psu_dc.cir                  $ Lecturer defines the current-limited power supplies
 
@@ -125,6 +125,7 @@ Xamp              in    out     outn    vcc     vee       audioamp
   tran $&tstep $&tstop1k 0 $&tstep                       $ 1 kHz run (tran2)
     plot v(vcc),v(vee),v(in), v(out)
 	plot v(xamp.em)
+	plot v(in),v(xamp.cc1-1)
 	
   
   let SimFreq     = 40
